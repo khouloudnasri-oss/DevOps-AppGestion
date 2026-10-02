@@ -1,0 +1,39 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout Frontend') {
+            steps {
+                echo ' Récupération du code source...'
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo ' Installation des dépendances npm...'
+                dir('frontend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Build Angular') {
+            steps {
+                echo ' Compilation de l application Angular...'
+                dir('frontend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo ' Frontend Angular buildé avec succès !'
+        }
+        failure {
+            echo ' Échec lors du build Frontend !'
+        }
+    }
+}
