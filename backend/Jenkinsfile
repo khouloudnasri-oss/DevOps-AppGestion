@@ -1,9 +1,10 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'JAVA_HOME'
-        maven 'M2_HOME'
+    environment {
+        DOCKER_HUB_USER = 'khouloudnasry'
+        IMAGE_NAME = 'gestion-projets-backend'
+        REGISTRY_CREDENTIALS = 'dockerhub-credentials'
     }
 
     stages {
@@ -16,7 +17,7 @@ pipeline {
 
         stage('Compilation Maven') {
             steps {
-                echo ' Compilation du projet Spring Boot...'
+                echo ' Compilation du projet...'
                 dir('backend') {
                     sh 'mvn clean compile'
                 }
@@ -25,20 +26,68 @@ pipeline {
 
         stage('Test & Package') {
             steps {
-                echo ' Exécution des tests et génération du livrable JAR...'
+                echo ' Génération de l archive JAR...'
                 dir('backend') {
                     sh 'mvn clean package -DskipTests'
                 }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo ' Construction de l image Docker Backend...'
+                dir('backend') {
+                    sh "docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ."
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                echo ' Publication de l image sur Docker Hub...'
+                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
+                }
+            }
+        }
+
+        stage('Run MySQL') {
+            steps {
+                echo ' Vérification et démarrage du conteneur MySQL...'
+                sh '''
+                    if [ ! "$(docker ps -q -f name=mysql-app)" ]; then
+                        if [ "$(docker ps -aq -f name=mysql-app)" ]; then
+                            docker rm -f mysql-app
+                        fi
+                        docker run -d --name mysql-app -p 3306:3306 \
+                          -e MYSQL_ROOT_PASSWORD=root \
+                          -e MYSQL_DATABASE=gestion_projets \
+                          mysql:8.0
+                    fi
+                '''
+            }
+        }
+
+        stage('Run Backend App') {
+            steps {
+                echo ' Démarrage du conteneur Backend...'
+                sh """
+                    docker rm -f backend-app || true
+                    docker run -d --name backend-app -p 8082:8082 \
+                      --link mysql-app:mysql \
+                      ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                """
             }
         }
     }
 
     post {
         success {
-            echo ' Backend compilé et packagé avec succès !'
+            echo ' Pipeline Backend et Déploiement Docker exécutés avec succès !'
         }
         failure {
-            echo ' Échec lors du build Backend !'
+            echo ' Échec lors du pipeline Backend !'
         }
     }
 }
