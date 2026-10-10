@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        DOCKER_HUB_USER = 'khouloudnasry'
+        IMAGE_NAME = 'gestion-projets-frontend'
+        REGISTRY_CREDENTIALS = 'dockerhub-credentials'
+    }
+
     stages {
         stage('Checkout Frontend') {
             steps {
@@ -26,11 +32,41 @@ pipeline {
                 }
             }
         }
+
+        stage('Build Docker Image') {
+            steps {
+                echo ' Construction de l image Docker Frontend...'
+                dir('frontend') {
+                    sh "docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ."
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                echo ' Publication de l image sur Docker Hub...'
+                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
+                }
+            }
+        }
+
+        stage('Run Frontend App') {
+            steps {
+                echo ' Démarrage du conteneur Frontend (Nginx)...'
+                sh """
+                    docker rm -f frontend-app || true
+                    docker run -d --name frontend-app -p 80:80 \
+                      ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                """
+            }
+        }
     }
 
     post {
         success {
-            echo ' Frontend Angular buildé avec succès !'
+            echo ' Frontend Angular buildé, poussé sur Docker Hub et déployé avec succès !'
         }
         failure {
             echo ' Échec lors du build Frontend !'
